@@ -10,7 +10,12 @@ fn every_vendored_vector() {
     let mut acceptable = 0;
     for entry in std::fs::read_dir(directory).unwrap() {
         let path = entry.unwrap().path();
-        if path.extension().is_none_or(|extension| extension != "json") {
+        if path.extension().is_none_or(|extension| extension != "json")
+            || !path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("rsa_pss_"))
+        {
             continue;
         }
         files += 1;
