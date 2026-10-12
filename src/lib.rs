@@ -8,6 +8,7 @@
 
 mod bigint;
 mod der;
+mod pkcs1;
 mod pss;
 
 use core::fmt;
@@ -110,6 +111,46 @@ impl RsaPublicKey {
         if digest.len() != expected {
             return Err(Error::DigestLength);
         }
+        let mut buffer = [0u8; 1024];
+        let encoded = self.open(sig, &mut buffer)?;
+        match hash {
+            Hash::Sha256 => pss::verify::<Sha256>(digest, encoded, self.bits),
+            Hash::Sha384 => pss::verify::<Sha384>(digest, encoded, self.bits),
+            Hash::Sha512 => pss::verify::<Sha512>(digest, encoded, self.bits),
+        }
+    }
+}
+
+impl RsaPublicKey {
+    /// Verify RSASSA-PKCS1-v1_5 over a message, as used for certificate
+    /// signatures (`sha256WithRSAEncryption` and friends).
+    ///
+    /// Not for TLS 1.3 CertificateVerify, which RFC 8446 requires to be PSS.
+    pub fn verify_pkcs1v15(&self, hash: Hash, msg: &[u8], sig: &[u8]) -> Result<(), Error> {
+        match hash {
+            Hash::Sha256 => self.verify_pkcs1v15_prehashed(hash, &Sha256::digest(msg), sig),
+            Hash::Sha384 => self.verify_pkcs1v15_prehashed(hash, &Sha384::digest(msg), sig),
+            Hash::Sha512 => self.verify_pkcs1v15_prehashed(hash, &Sha512::digest(msg), sig),
+        }
+    }
+
+    /// Verify RSASSA-PKCS1-v1_5 over an already computed digest.
+    pub fn verify_pkcs1v15_prehashed(
+        &self,
+        hash: Hash,
+        digest: &[u8],
+        sig: &[u8],
+    ) -> Result<(), Error> {
+        if digest.len() != hash_len(hash) {
+            return Err(Error::DigestLength);
+        }
+        let mut buffer = [0u8; 1024];
+        let encoded = self.open(sig, &mut buffer)?;
+        pkcs1::verify(hash, digest, encoded)
+    }
+
+    /// Check the signature shape and compute `sig^e mod n` as k bytes.
+    fn open<'a>(&self, sig: &[u8], buffer: &'a mut [u8; 1024]) -> Result<&'a mut [u8], Error> {
         let k = self.bits.div_ceil(8);
         if sig.len() != k {
             return Err(Error::Verification);
@@ -119,14 +160,17 @@ impl RsaPublicKey {
             return Err(Error::Verification);
         }
         let result = bigint::exponentiate(self, &signature)?;
-        let mut encoded = [0u8; 1024];
-        let encoded = encoded.get_mut(..k).ok_or(Error::Verification)?;
+        let encoded = buffer.get_mut(..k).ok_or(Error::Verification)?;
         bigint::encode(&result, encoded);
-        match hash {
-            Hash::Sha256 => pss::verify::<Sha256>(digest, encoded, self.bits),
-            Hash::Sha384 => pss::verify::<Sha384>(digest, encoded, self.bits),
-            Hash::Sha512 => pss::verify::<Sha512>(digest, encoded, self.bits),
-        }
+        Ok(encoded)
+    }
+}
+
+const fn hash_len(hash: Hash) -> usize {
+    match hash {
+        Hash::Sha256 => 32,
+        Hash::Sha384 => 48,
+        Hash::Sha512 => 64,
     }
 }
 
