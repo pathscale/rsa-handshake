@@ -1,5 +1,12 @@
 # rsa-handshake
 
+> **Moved.** This code now lives in
+> [`legacy-bullshit`](https://crates.io/crates/legacy-bullshit)
+> ([GitHub](https://github.com/pathscale/legacy-bullshit)) as its `rsa`
+> module, unchanged, alongside the AES-128 that QUIC Initial packets require.
+> New code should depend on `legacy-bullshit`; `rsa-handshake` gets no further
+> changes.
+
 Verify-only RSASSA-PSS for the TLS 1.3 server CertificateVerify, and nothing
 else.
 
